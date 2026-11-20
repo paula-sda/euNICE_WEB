@@ -1677,6 +1677,218 @@ input[type="color"] {
     gap: 9px;
 }
 
+.rutina-campo,
+.rutina-temp-entrada {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.rutina-temp-entrada {
+    flex-direction: row;
+    align-items: center;
+    gap: 9px;
+}
+
+.rutina-temp-entrada input,
+.rutina-campo input,
+.rutina-campo select {
+    width: 100%;
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 11px;
+    border: 1px solid var(--borde);
+    border-radius: 9px;
+    background: var(--superficie);
+    color: var(--texto);
+    font: inherit;
+    font-size: 12px;
+}
+
+.rutina-temp-entrada > span {
+    color: var(--texto-secundario);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.rutina-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+    gap: 15px 12px;
+}
+
+.rutina-campo {
+    color: var(--texto-secundario);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.rutina-campo-completo {
+    grid-column: 1 / -1;
+}
+
+.rutina-dias-selector {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.rutina-dias-selector legend {
+    margin-bottom: 9px;
+    color: var(--texto-secundario);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.rutina-dia {
+    position: relative;
+    min-width: 0;
+}
+
+.rutina-dia input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+.rutina-dia span {
+    display: grid;
+    min-height: 38px;
+    place-items: center;
+    border: 1px solid var(--borde);
+    border-radius: 9px;
+    background: var(--superficie-suave);
+    color: var(--texto-secundario);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 700;
+    transition: background-color var(--transicion), border-color var(--transicion), color var(--transicion);
+}
+
+.rutina-dia input:checked + span {
+    border-color: color-mix(in srgb, var(--primario) 40%, var(--borde));
+    background: var(--primario-suave);
+    color: var(--primario);
+}
+
+.rutina-dia input:focus-visible + span {
+    outline: 3px solid color-mix(in srgb, var(--primario) 40%, transparent);
+    outline-offset: 2px;
+}
+
+.rutina-submit {
+    width: 100%;
+    min-height: 43px;
+    padding: 0 12px;
+    font-size: 11px;
+}
+
+.rutina-mensaje {
+    min-height: 1.5em;
+    margin: 0;
+    color: var(--texto-terciario);
+    font-size: 10px;
+    line-height: 1.5;
+}
+
+.rutina-mensaje.error {
+    color: var(--alerta);
+}
+
+.rutina-lista {
+    display: grid;
+    gap: 12px;
+}
+
+.rutina-tarjeta {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid var(--borde);
+    border-radius: 15px;
+    background: var(--superficie-suave);
+}
+
+.rutina-tarjeta-cabecera {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.rutina-tarjeta-cabecera h3 {
+    margin: 4px 0 0;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+}
+
+.rutina-lugar {
+    color: var(--primario);
+    font-size: 9px;
+    font-weight: 750;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.rutina-eliminar {
+    min-height: 32px;
+    padding: 0 9px;
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    background: var(--superficie);
+    color: var(--texto-secundario);
+    cursor: pointer;
+    font: inherit;
+    font-size: 10px;
+}
+
+.rutina-eliminar:hover {
+    border-color: var(--alerta);
+    color: var(--alerta);
+}
+
+.rutina-dias-resumen {
+    color: var(--texto-terciario);
+    font-size: 10px;
+}
+
+.rutina-plan {
+    display: grid;
+    grid-template-columns: minmax(90px, 0.65fr) minmax(0, 1.35fr);
+    gap: 12px;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--borde);
+    border-radius: 11px;
+    background: var(--superficie);
+}
+
+.rutina-vacia {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 22px 16px;
+    border: 1px dashed var(--borde);
+    border-radius: 12px;
+    color: var(--texto-secundario);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.rutina-vacia strong {
+    color: var(--texto);
+    font-size: 13px;
+}
+
 /* Modal de confirmación */
 .modal {
     position: fixed;
@@ -1919,3 +2131,223 @@ body:not(.autenticado) > :not(#login-screen) { visibility: hidden; }
 }
 .login-card .boton-principal { min-height: 46px; }
 .login-card .login-message { color: var(--alerta, #bb6754); }
+
+.rutina-subtitulo {
+    margin: 6px 0 0;
+    color: var(--texto-secundario);
+    font-size: 12px;
+}
+
+.rutina-estado {
+    margin: 5px 0 0;
+    color: var(--texto-terciario);
+    font-size: 10px;
+}
+
+.encabezado-rutinas {
+    align-items: center;
+}
+
+.rutina-nueva {
+    white-space: nowrap;
+}
+
+.rutina-nueva-panel {
+    margin-bottom: 14px;
+    padding: 0 clamp(16px, 2.5vw, 24px);
+}
+
+.rutina-nueva-panel summary {
+    padding: 17px 0;
+    color: var(--texto);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 650;
+    list-style-position: inside;
+}
+
+.rutina-form-contenido {
+    padding: 0 0 18px;
+}
+
+.rutina-form {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: end;
+}
+
+.rutina-form-acciones {
+    display: flex;
+    justify-content: flex-end;
+    gap: 9px;
+}
+
+.rutina-submit {
+    width: auto;
+    min-width: 135px;
+}
+
+.rutina-mensaje:empty {
+    display: none;
+}
+
+.rutina-mensaje {
+    margin: 0 0 12px;
+}
+
+.rutina-lista {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.rutina-tarjeta {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0 12px;
+    background: var(--superficie);
+    box-shadow: var(--sombra);
+}
+
+.rutina-tarjeta.pausada {
+    opacity: 0.72;
+}
+
+.rutina-control-estado {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--texto-secundario);
+    font-size: 10px;
+    font-weight: 650;
+}
+
+.rutina-dias-resumen {
+    grid-column: 1 / -1;
+    margin: 7px 0 12px;
+}
+
+.rutina-plan {
+    grid-column: 1 / -1;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    margin: 0 0 12px;
+    background: var(--superficie-suave);
+}
+
+.rutina-plan > span {
+    color: var(--texto-secundario);
+    font-size: 10px;
+}
+
+.rutina-plan > strong {
+    justify-self: end;
+    color: var(--primario);
+    font-size: 12px;
+    text-align: right;
+}
+
+.rutina-plan > small {
+    grid-column: 1 / -1;
+    color: var(--texto-terciario);
+    font-size: 9px;
+    text-align: right;
+}
+
+.rutina-eliminar {
+    grid-column: 1;
+    width: fit-content;
+    min-height: 28px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-size: 10px;
+}
+
+.rutina-interruptor {
+    position: relative;
+    display: inline-flex;
+    width: 42px;
+    height: 24px;
+    cursor: pointer;
+}
+
+.rutina-interruptor input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+.rutina-interruptor span {
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--borde);
+    border-radius: 999px;
+    background: var(--superficie-acento);
+    transition: background-color var(--transicion), border-color var(--transicion);
+}
+
+.rutina-interruptor span::before {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--superficie);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+    content: "";
+    transition: transform var(--transicion);
+}
+
+.rutina-interruptor input:checked + span {
+    border-color: var(--primario);
+    background: var(--primario);
+}
+
+.rutina-interruptor input:checked + span::before {
+    transform: translateX(18px);
+}
+
+.rutina-interruptor input:focus-visible + span {
+    outline: 3px solid color-mix(in srgb, var(--primario) 40%, transparent);
+    outline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+    .encabezado-rutinas {
+        align-items: center;
+        flex-direction: row;
+        gap: 10px;
+    }
+
+    .rutina-nueva {
+        min-height: 42px;
+        padding: 0 12px;
+        font-size: 11px;
+    }
+
+    .rutina-lista {
+        grid-template-columns: 1fr;
+    }
+
+    .rutina-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 380px) {
+    .encabezado-rutinas {
+        align-items: start;
+        flex-direction: column;
+    }
+
+    .rutina-form {
+        grid-template-columns: 1fr;
+    }
+
+    .rutina-campo-completo {
+        grid-column: auto;
+    }
+}

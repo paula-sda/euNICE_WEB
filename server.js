@@ -5,6 +5,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { promisify } = require('util');
 const ExcelJS = require('exceljs');
 const { Server } = require('socket.io');
 const mqtt = require('mqtt');
@@ -22,17 +23,28 @@ const sessionCookieName = 'eunice_session';
 const sessionDurationMs = 12 * 60 * 60 * 1000;
 const accessSessions = new Map();
 const loginAttempts = new Map();
-const accessUsername = process.env.EUNICE_ACCESS_USERNAME || 'Euniceprueba';
-const configuredPassword = process.env.EUNICE_ACCESS_PASSWORD;
+const accessUsername = process.env.EUNICE_ACCESS_USERNAME || 'Eunice';
+const configuredPasswordHash = process.env.EUNICE_ACCESS_PASSWORD_HASH;
+const passwordHashMatch = configuredPasswordHash?.match(/^scrypt\$([a-f0-9]{32})\$([a-f0-9]{128})$/i);
+const passwordSalt = passwordHashMatch ? Buffer.from(passwordHashMatch[1], 'hex') : null;
+const passwordHash = passwordHashMatch ? Buffer.from(passwordHashMatch[2], 'hex') : null;
+const derivePasswordHash = promisify(crypto.scrypt);
+const passwordHashOptions = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 
-if (!configuredPassword || configuredPassword.length < 12) {
-    throw new Error('Configura EUNICE_ACCESS_PASSWORD en .env con al menos 12 caracteres.');
+if (!passwordHashMatch) {
+    throw new Error('Configura EUNICE_ACCESS_PASSWORD_HASH en .env con un hash scrypt válido.');
 }
 
 function coincideSecreto(valor, esperado) {
     const recibido = Buffer.from(typeof valor === 'string' ? valor : '');
     const referencia = Buffer.from(esperado);
     return recibido.length === referencia.length && crypto.timingSafeEqual(recibido, referencia);
+}
+
+async function coincideContrasena(valor) {
+    if (typeof valor !== 'string' || Buffer.byteLength(valor, 'utf8') > 1024) return false;
+    const derivado = await derivePasswordHash(valor, passwordSalt, passwordHash.length, passwordHashOptions);
+    return crypto.timingSafeEqual(derivado, passwordHash);
 }
 
 function getSessionToken(cookieHeader = '') {
@@ -60,7 +72,7 @@ function setSessionCookie(response, request, token) {
     );
 }
 
-app.post('/api/login', (request, response) => {
+app.post('/api/login', async (request, response) => {
     const ip = request.ip;
     const attempt = loginAttempts.get(ip);
     if (attempt?.blockedUntil > Date.now()) {
@@ -69,7 +81,7 @@ app.post('/api/login', (request, response) => {
     }
 
     const valid = coincideSecreto(request.body?.username, accessUsername)
-        && coincideSecreto(request.body?.password, configuredPassword);
+        && await coincideContrasena(request.body?.password);
     if (!valid) {
         const failures = (attempt?.failures || 0) + 1;
         loginAttempts.set(ip, {
@@ -120,6 +132,7 @@ const dataDirectory = process.env.EUNICE_DATA_DIR || path.join(__dirname, 'data'
 const historyFile = path.join(dataDirectory, 'records.jsonl');
 const dailyHistoryDirectory = path.join(dataDirectory, 'history');
 const settingsFile = path.join(dataDirectory, 'settings.json');
+const routinesFile = path.join(dataDirectory, 'routines.json');
 const pushSubscriptionFile = path.join(dataDirectory, 'push-subscriptions.json');
 const vapidKeyFile = path.join(dataDirectory, 'vapid-keys.json');
 let mqttConnected = false;
@@ -205,6 +218,175 @@ function guardarSuscripcionesPush() {
     fs.writeFileSync(temporaryFile, `${JSON.stringify([...suscripcionesPush.values()], null, 2)}\n`);
     fs.renameSync(temporaryFile, pushSubscriptionFile);
 }
+
+function esRutinaValida(rutina) {
+    return Boolean(
+        rutina
+        && typeof rutina.id === 'string'
+        && /^[A-Za-z0-9_-]{1,80}$/.test(rutina.id)
+        && typeof rutina.nombre === 'string'
+        && rutina.nombre.trim().length > 0
+        && rutina.nombre.trim().length <= 48
+        && ['Casa', 'Oficina'].includes(rutina.lugar)
+        && Array.isArray(rutina.dias)
+        && rutina.dias.length > 0
+        && rutina.dias.every(dia => Number.isInteger(dia) && dia >= 0 && dia <= 6)
+        && new Set(rutina.dias).size === rutina.dias.length
+        && typeof rutina.hora === 'string'
+        && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(rutina.hora)
+        && Number.isFinite(rutina.temperatura)
+        && rutina.temperatura >= 16
+        && rutina.temperatura <= 28
+        && typeof rutina.activa === 'boolean'
+    );
+}
+
+function cargarRutinas() {
+    if (!fs.existsSync(routinesFile)) return [];
+    const routines = JSON.parse(fs.readFileSync(routinesFile, 'utf8'));
+    if (!Array.isArray(routines) || !routines.every(esRutinaValida)) {
+        throw new Error(`El archivo de rutinas no es válido: ${routinesFile}`);
+    }
+    return routines;
+}
+
+let rutinas = cargarRutinas();
+
+function persistirRutinas(nuevasRutinas) {
+    const temporaryFile = `${routinesFile}.tmp`;
+    fs.writeFileSync(temporaryFile, `${JSON.stringify(nuevasRutinas, null, 2)}\n`);
+    fs.renameSync(temporaryFile, routinesFile);
+    rutinas = nuevasRutinas;
+    io.emit('rutinas_actualizadas', rutinas);
+}
+
+function normalizarDatosRutina(rutina, id, activa = true) {
+    if (
+        !rutina
+        || typeof rutina.nombre !== 'string'
+        || !['Casa', 'Oficina'].includes(rutina.lugar)
+        || !Array.isArray(rutina.dias)
+        || !rutina.dias.length
+        || !rutina.dias.every(dia => Number.isInteger(dia) && dia >= 0 && dia <= 6)
+        || new Set(rutina.dias).size !== rutina.dias.length
+        || typeof rutina.hora !== 'string'
+        || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(rutina.hora)
+        || !Number.isFinite(rutina.temperatura)
+        || rutina.temperatura < 16
+        || rutina.temperatura > 28
+    ) {
+        return null;
+    }
+
+    const normalizada = {
+        id,
+        nombre: rutina.nombre.trim(),
+        lugar: rutina.lugar,
+        dias: [...rutina.dias],
+        hora: rutina.hora,
+        temperatura: rutina.temperatura,
+        activa
+    };
+    return esRutinaValida(normalizada) ? normalizada : null;
+}
+
+app.get('/api/rutinas', (request, response) => {
+    response.json({ rutinas });
+});
+
+app.post('/api/rutinas/import', (request, response) => {
+    if (!Array.isArray(request.body?.rutinas)) {
+        response.status(400).json({ error: 'El formato de las rutinas no es válido.' });
+        return;
+    }
+
+    const imported = request.body.rutinas
+        .filter(rutina => !(rutina && typeof rutina.id === 'string' && rutina.id.startsWith('ejemplo-')))
+        .map(rutina => normalizarDatosRutina(
+            rutina,
+            typeof rutina?.id === 'string' ? rutina.id : '',
+            rutina?.activa === true
+        ));
+    if (imported.some(rutina => !rutina)) {
+        response.status(400).json({ error: 'Una o más rutinas no tienen un formato válido.' });
+        return;
+    }
+
+    const idsExistentes = new Set(rutinas.map(rutina => rutina.id));
+    const nuevasRutinas = imported
+        .filter(rutina => !idsExistentes.has(rutina.id))
+        .reduce((acumuladas, rutina) => {
+            if (!acumuladas.some(existente => existente.id === rutina.id)) acumuladas.push(rutina);
+            return acumuladas;
+        }, [...rutinas]);
+    if (nuevasRutinas.length === rutinas.length) {
+        response.json({ rutinas, imported: false });
+        return;
+    }
+
+    try {
+        persistirRutinas(nuevasRutinas);
+        response.status(201).json({ rutinas, imported: true });
+    } catch (error) {
+        console.error('No se pudieron importar las rutinas:', error.message);
+        response.status(500).json({ error: 'No se pudieron guardar las rutinas en el servidor.' });
+    }
+});
+
+app.post('/api/rutinas', (request, response) => {
+    const rutina = normalizarDatosRutina(request.body, crypto.randomBytes(12).toString('hex'));
+    if (!rutina) {
+        response.status(400).json({ error: 'Los datos de la rutina no son válidos.' });
+        return;
+    }
+
+    try {
+        persistirRutinas([...rutinas, rutina]);
+        response.status(201).json({ rutinas });
+    } catch (error) {
+        console.error('No se pudo guardar la rutina:', error.message);
+        response.status(500).json({ error: 'No se pudo guardar la rutina en el servidor.' });
+    }
+});
+
+app.patch('/api/rutinas/:id', (request, response) => {
+    const { id } = request.params;
+    const indice = rutinas.findIndex(rutina => rutina.id === id);
+    if (indice === -1) {
+        response.status(404).json({ error: 'No se encontró la rutina.' });
+        return;
+    }
+    if (typeof request.body?.activa !== 'boolean' || Object.keys(request.body).length !== 1) {
+        response.status(400).json({ error: 'El estado de la rutina no es válido.' });
+        return;
+    }
+
+    const nuevasRutinas = rutinas.map((rutina, index) => (
+        index === indice ? { ...rutina, activa: request.body.activa } : rutina
+    ));
+    try {
+        persistirRutinas(nuevasRutinas);
+        response.json({ rutinas });
+    } catch (error) {
+        console.error('No se pudo actualizar la rutina:', error.message);
+        response.status(500).json({ error: 'No se pudo actualizar la rutina en el servidor.' });
+    }
+});
+
+app.delete('/api/rutinas/:id', (request, response) => {
+    const nuevasRutinas = rutinas.filter(rutina => rutina.id !== request.params.id);
+    if (nuevasRutinas.length === rutinas.length) {
+        response.status(404).json({ error: 'No se encontró la rutina.' });
+        return;
+    }
+    try {
+        persistirRutinas(nuevasRutinas);
+        response.json({ rutinas });
+    } catch (error) {
+        console.error('No se pudo eliminar la rutina:', error.message);
+        response.status(500).json({ error: 'No se pudo eliminar la rutina en el servidor.' });
+    }
+});
 
 app.get('/api/push/public-key', (request, response) => {
     if (!pushConfigured) {

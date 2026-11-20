@@ -13,7 +13,7 @@
     <script>
         document.documentElement.dataset.theme = localStorage.getItem('eunice-tema') || 'light';
     </script>
-    <link rel="stylesheet" href="/styles.css?v=29">
+    <link rel="stylesheet" href="/styles.css?v=30">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/socket.io/socket.io.js"></script>
 </head>
@@ -159,6 +159,10 @@
                     <span class="nav-indicador" aria-hidden="true"></span>
                     <span>Estadísticas</span>
                 </button>
+                <button class="nav-item" onclick="cambiarVista('vista-rutinas', this)">
+                    <span class="nav-indicador" aria-hidden="true"></span>
+                    <span>Rutinas</span>
+                </button>
                 <button class="nav-item" onclick="cambiarVista('vista-configuracion', this)">
                     <span class="nav-indicador" aria-hidden="true"></span>
                     <span>Configuración</span>
@@ -202,6 +206,87 @@
                             <div class="tarjeta-acento"></div>
                         </article>
                     </div>
+                </section>
+
+                <section id="vista-rutinas" class="vista">
+                    <div class="encabezado-vista encabezado-rutinas">
+                        <div>
+                            <h1 class="titulo-seccion">Rutinas</h1>
+                            <p class="rutina-subtitulo">Prepara la temperatura para tu llegada.</p>
+                            <p class="rutina-estado">Control automático del termostato pendiente de conexión.</p>
+                        </div>
+                        <button class="boton-principal rutina-nueva" type="button"
+                            onclick="document.getElementById('rutina-nueva').open = !document.getElementById('rutina-nueva').open">
+                            + Nueva rutina
+                        </button>
+                    </div>
+                    <details id="rutina-nueva" class="panel rutina-nueva-panel">
+                        <summary>Añadir una llegada habitual</summary>
+                        <div class="rutina-form-contenido">
+                            <form id="rutina-form" class="rutina-form">
+                                <label class="rutina-campo" for="rutina-nombre">
+                                    <span>Nombre</span>
+                                    <input id="rutina-nombre" type="text" maxlength="48" value="Llegada a casa" required>
+                                </label>
+                                <label class="rutina-campo" for="rutina-lugar">
+                                    <span>Lugar</span>
+                                    <select id="rutina-lugar">
+                                        <option value="Casa">Casa</option>
+                                        <option value="Oficina">Oficina</option>
+                                    </select>
+                                </label>
+                                <label class="rutina-campo" for="rutina-hora">
+                                    <span>Hora de llegada</span>
+                                    <input id="rutina-hora" type="time" value="18:30" required>
+                                </label>
+                                <label class="rutina-campo" for="rutina-objetivo">
+                                    <span>Temperatura</span>
+                                    <span class="rutina-temp-entrada">
+                                        <input id="rutina-objetivo" type="number" min="16" max="28" step="0.5" value="21" required>
+                                        <span>°C</span>
+                                    </span>
+                                </label>
+                                <fieldset class="rutina-dias-selector rutina-campo-completo">
+                                    <legend>Repetir</legend>
+                                    <label class="rutina-dia" title="Lunes">
+                                        <input type="checkbox" name="rutina-dias" value="1" checked>
+                                        <span>L</span>
+                                    </label>
+                                    <label class="rutina-dia" title="Martes">
+                                        <input type="checkbox" name="rutina-dias" value="2" checked>
+                                        <span>M</span>
+                                    </label>
+                                    <label class="rutina-dia" title="Miércoles">
+                                        <input type="checkbox" name="rutina-dias" value="3" checked>
+                                        <span>X</span>
+                                    </label>
+                                    <label class="rutina-dia" title="Jueves">
+                                        <input type="checkbox" name="rutina-dias" value="4" checked>
+                                        <span>J</span>
+                                    </label>
+                                    <label class="rutina-dia" title="Viernes">
+                                        <input type="checkbox" name="rutina-dias" value="5" checked>
+                                        <span>V</span>
+                                    </label>
+                                    <label class="rutina-dia" title="Sábado">
+                                        <input type="checkbox" name="rutina-dias" value="6">
+                                        <span>S</span>
+                                    </label>
+                                    <label class="rutina-dia" title="Domingo">
+                                        <input type="checkbox" name="rutina-dias" value="0">
+                                        <span>D</span>
+                                    </label>
+                                </fieldset>
+                                <div class="rutina-form-acciones rutina-campo-completo">
+                                    <button class="boton-secundario" type="button"
+                                        onclick="document.getElementById('rutina-nueva').open = false">Cancelar</button>
+                                    <button class="boton-principal rutina-submit" type="submit">Guardar rutina</button>
+                                </div>
+                            </form>
+                        </div>
+                    </details>
+                    <p id="rutina-mensaje" class="rutina-mensaje" role="status" aria-live="polite"></p>
+                    <div id="rutina-lista" class="rutina-lista" aria-live="polite"></div>
                 </section>
 
                 <section id="vista-estadisticas" class="vista">
@@ -351,6 +436,6 @@
         </div>
     </div>
 
-    <script src="/app.js?v=12"></script>
+    <script src="/app.js?v=15"></script>
 </body>
 </html>

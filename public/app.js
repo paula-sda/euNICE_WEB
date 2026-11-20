@@ -6,6 +6,9 @@ let accionPendiente = '';
 let accionAnteriorPendiente = '';
 let ultimaTransicionFeedback = '';
 let pausarActualizaciones = false; // Detiene la actualización visual si el pop-up está abierto
+let temperaturaActualRutina = null;
+let rutinasCargadas = false;
+let revisionRutinasSocket = 0;
 let fechasHistorico = [];
 let fechaSeleccionada = fechaLocal(new Date());
 let historicoDatos = [];
@@ -84,6 +87,10 @@ socket.on('datos_actualizados', (datos) => {
     const estabaEncendido = sistemaActivo;
     sistemaActivo = datos.sistema_encendido;
     actualizarUI(datos);
+    if (Number.isFinite(datos.temperatura) && datos.temperatura >= 5 && datos.temperatura <= 40) {
+        temperaturaActualRutina = datos.temperatura;
+        actualizarRutinas();
+    }
 
     evaluarNecesidadFeedback(datos, sistemaActivo && !estabaEncendido);
 });
@@ -114,6 +121,18 @@ socket.on('configuracion_actualizada', (configuracion) => {
     document.getElementById('col-neutro').value = configuracion.colores.neutro;
     document.getElementById('col-calor').value = configuracion.colores.calor;
     ultimaTransicionFeedback = '';
+});
+
+socket.on('rutinas_actualizadas', rutinasServidor => {
+    if (!Array.isArray(rutinasServidor) || !rutinasServidor.every(rutinaValida)) {
+        console.error('El servidor envió una lista de rutinas no válida.');
+        mostrarMensajeRutina('No se pudo actualizar la lista de rutinas recibida del servidor.', true);
+        return;
+    }
+    revisionRutinasSocket += 1;
+    rutinas = rutinasServidor.map(normalizarRutina);
+    rutinasCargadas = true;
+    actualizarRutinas();
 });
 
 socket.on('error_persistencia', mensaje => alert(mensaje));
@@ -442,6 +461,324 @@ function cambiarVista(idVista, btnPulsado) {
     btnPulsado.classList.add('activo');
 }
 
+const clavesRutinasAnteriores = ['eunice-rutinas-v2', 'eunice-rutinas-demo-v1'];
+const etiquetasDiasRutina = [
+    { valor: 1, nombre: 'Lun' },
+    { valor: 2, nombre: 'Mar' },
+    { valor: 3, nombre: 'Mié' },
+    { valor: 4, nombre: 'Jue' },
+    { valor: 5, nombre: 'Vie' },
+    { valor: 6, nombre: 'Sáb' },
+    { valor: 0, nombre: 'Dom' }
+];
+
+function rutinaValida(rutina) {
+    if (
+        !rutina
+        || typeof rutina.id !== 'string'
+        || !/^[A-Za-z0-9_-]{1,80}$/.test(rutina.id)
+        || typeof rutina.nombre !== 'string'
+        || !rutina.nombre.trim()
+        || rutina.nombre.trim().length > 48
+        || !['Casa', 'Oficina'].includes(rutina.lugar)
+        || !Array.isArray(rutina.dias)
+        || !rutina.dias.length
+        || !rutina.dias.every(dia => Number.isInteger(dia) && dia >= 0 && dia <= 6)
+        || typeof rutina.hora !== 'string'
+        || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(rutina.hora)
+        || !Number.isFinite(rutina.temperatura)
+        || rutina.temperatura < 16
+        || rutina.temperatura > 28
+    ) {
+        return false;
+    }
+    return new Set(rutina.dias).size === rutina.dias.length;
+}
+
+function normalizarRutina(rutina) {
+    return { ...rutina, dias: [...rutina.dias], activa: rutina.activa === true };
+}
+
+function cargarRutinasLocalesAnteriores() {
+    try {
+        for (const clave of clavesRutinasAnteriores) {
+            const guardado = localStorage.getItem(clave);
+            if (!guardado) continue;
+            const estado = JSON.parse(guardado);
+            if (!Array.isArray(estado.rutinas)) {
+                throw new Error('El formato de las rutinas guardadas localmente no es válido.');
+            }
+            return estado.rutinas
+                .filter(rutina => rutinaValida(rutina) && !rutina.id.startsWith('ejemplo-'))
+                .map(normalizarRutina);
+        }
+        return [];
+    } catch (error) {
+        console.error('No se pudieron leer las rutinas guardadas localmente:', error);
+        mostrarMensajeRutina('No se pudieron recuperar las rutinas anteriores de este dispositivo.', true);
+        return [];
+    }
+}
+
+function limpiarRutinasLocalesAnteriores() {
+    try {
+        clavesRutinasAnteriores.forEach(clave => localStorage.removeItem(clave));
+    } catch (error) {
+        console.error('No se pudieron borrar las rutinas locales ya sincronizadas:', error);
+    }
+}
+
+async function leerRespuestaRutinas(response, mensajeError) {
+    const resultado = await response.json();
+    if (!response.ok) throw new Error(resultado.error || mensajeError);
+    if (!Array.isArray(resultado.rutinas) || !resultado.rutinas.every(rutinaValida)) {
+        throw new Error('El servidor devolvió una lista de rutinas no válida.');
+    }
+    return resultado;
+}
+
+let rutinas = [];
+
+async function cargarRutinasDesdeServidor() {
+    const revisionInicial = revisionRutinasSocket;
+    mostrarMensajeRutina('Cargando rutinas...');
+    try {
+        let resultado = await leerRespuestaRutinas(
+            await fetch('/api/rutinas'),
+            'No se pudieron cargar las rutinas.'
+        );
+        const rutinasAnteriores = cargarRutinasLocalesAnteriores();
+        if (rutinasAnteriores.length > 0) {
+            resultado = await leerRespuestaRutinas(await fetch('/api/rutinas/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rutinas: rutinasAnteriores })
+            }), 'No se pudieron sincronizar las rutinas anteriores.');
+        }
+
+        if (revisionInicial === revisionRutinasSocket) {
+            rutinas = resultado.rutinas.map(normalizarRutina);
+        }
+        rutinasCargadas = true;
+        limpiarRutinasLocalesAnteriores();
+        actualizarRutinas();
+        mostrarMensajeRutina('');
+    } catch (error) {
+        console.error('No se pudieron sincronizar las rutinas:', error);
+        mostrarMensajeRutina(error.message, true);
+    }
+}
+
+function describirDiasRutina(dias) {
+    const ordenados = etiquetasDiasRutina.filter(dia => dias.includes(dia.valor));
+    if (ordenados.length === 7) return 'Todos los días';
+    if ([1, 2, 3, 4, 5].every(dia => dias.includes(dia)) && dias.length === 5) return 'Lunes a viernes';
+    return ordenados.map(dia => dia.nombre).join(' · ');
+}
+
+function proximaLlegadaRutina(rutina, ahora = new Date()) {
+    const [hora, minuto] = rutina.hora.split(':').map(Number);
+    for (let desplazamiento = 0; desplazamiento <= 7; desplazamiento += 1) {
+        const fecha = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + desplazamiento, hora, minuto);
+        if (rutina.dias.includes(fecha.getDay()) && fecha > ahora) return fecha;
+    }
+    return null;
+}
+
+function duracionRutina(minutos) {
+    const horas = Math.floor(minutos / 60);
+    const resto = minutos % 60;
+    if (!horas) return `${resto} min`;
+    if (!resto) return `${horas} h`;
+    return `${horas} h ${resto} min`;
+}
+
+function horaRutina(fecha, incluirDia = false) {
+    const opciones = incluirDia
+        ? { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }
+        : { hour: '2-digit', minute: '2-digit' };
+    return new Intl.DateTimeFormat('es-ES', opciones).format(fecha);
+}
+
+function crearPlanRutina(rutina, ahora = new Date()) {
+    if (temperaturaActualRutina === null) {
+        return { accion: 'Climatización', llegada: proximaLlegadaRutina(rutina, ahora), inicio: null, minutos: null };
+    }
+    const diferencia = rutina.temperatura - temperaturaActualRutina;
+    const llegada = proximaLlegadaRutina(rutina, ahora);
+    if (Math.abs(diferencia) < 0.5) {
+        return {
+            accion: 'Confort',
+            llegada,
+            inicio: null,
+            minutos: 0
+        };
+    }
+
+    const calefaccion = diferencia > 0;
+    const ritmoPorHora = calefaccion ? 1.8 : 2.4;
+    const minutos = Math.ceil((Math.abs(diferencia) / ritmoPorHora * 60) / 5) * 5;
+    const inicio = llegada ? new Date(llegada.getTime() - minutos * 60 * 1000) : null;
+    return {
+        accion: calefaccion ? 'Calefacción' : 'Aire acondicionado',
+        llegada,
+        inicio,
+        minutos
+    };
+}
+
+function mostrarMensajeRutina(mensaje, esError = false) {
+    const elemento = document.getElementById('rutina-mensaje');
+    elemento.innerText = mensaje;
+    elemento.classList.toggle('error', esError);
+}
+
+function actualizarRutinas() {
+    const lista = document.getElementById('rutina-lista');
+    if (rutinas.length === 0) {
+        lista.innerHTML = '<div class="rutina-vacia"><strong>Aún no hay rutinas</strong><span>Pulsa «Nueva rutina» para crear la primera.</span></div>';
+        return;
+    }
+
+    lista.innerHTML = rutinas.map(rutina => {
+        const plan = crearPlanRutina(rutina);
+        const objetivo = Number(rutina.temperatura).toLocaleString('es-ES', { maximumFractionDigits: 1 });
+        const inicio = plan.minutos === null
+            ? 'Esperando lectura'
+            : !plan.minutos
+                ? 'Temperatura ideal'
+                : plan.inicio <= new Date() ? 'Ahora' : horaRutina(plan.inicio, true);
+        const horaLlegada = plan.llegada ? horaRutina(plan.llegada, true) : '—';
+        return `
+            <article class="rutina-tarjeta${rutina.activa ? '' : ' pausada'}">
+                <div class="rutina-tarjeta-cabecera">
+                    <div>
+                        <span class="rutina-lugar">${escaparHtml(rutina.lugar)}</span>
+                        <h3>${escaparHtml(rutina.nombre)}</h3>
+                    </div>
+                    <div class="rutina-control-estado">
+                        <span>${rutina.activa ? 'Activa' : 'Pausada'}</span>
+                        <label class="rutina-interruptor">
+                            <input type="checkbox" data-rutina-toggle="${escaparHtml(rutina.id)}" ${rutina.activa ? 'checked' : ''}
+                                aria-label="${rutina.activa ? 'Desactivar' : 'Activar'} ${escaparHtml(rutina.nombre)}">
+                            <span></span>
+                        </label>
+                    </div>
+                </div>
+                <p class="rutina-dias-resumen">${escaparHtml(describirDiasRutina(rutina.dias))} · ${escaparHtml(rutina.hora)} · ${objetivo} °C</p>
+                <div class="rutina-plan">
+                    <span>${rutina.activa ? escaparHtml(plan.accion) : 'Pausada'}</span>
+                    <strong>${rutina.activa ? escaparHtml(inicio) : 'Rutina desactivada'}</strong>
+                    <small>${rutina.activa && plan.llegada ? `Llegada ${escaparHtml(horaLlegada)}` : ''}</small>
+                </div>
+                <button class="rutina-eliminar" type="button" data-rutina-eliminar="${escaparHtml(rutina.id)}"
+                    aria-label="Eliminar rutina ${escaparHtml(rutina.nombre)}">Eliminar</button>
+            </article>
+        `;
+    }).join('');
+
+    lista.querySelectorAll('[data-rutina-toggle]').forEach(control => {
+        control.addEventListener('change', async () => {
+            if (!rutinasCargadas) {
+                mostrarMensajeRutina('Espera a que se carguen las rutinas antes de cambiar su estado.', true);
+                actualizarRutinas();
+                return;
+            }
+            control.disabled = true;
+            try {
+                const resultado = await leerRespuestaRutinas(await fetch(
+                    `/api/rutinas/${encodeURIComponent(control.dataset.rutinaToggle)}`,
+                    {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ activa: control.checked })
+                    }
+                ), 'No se pudo actualizar la rutina.');
+                rutinas = resultado.rutinas.map(normalizarRutina);
+                actualizarRutinas();
+                mostrarMensajeRutina(`Rutina ${control.checked ? 'activada' : 'pausada'}.`);
+            } catch (error) {
+                console.error('No se pudo cambiar el estado de la rutina:', error);
+                actualizarRutinas();
+                mostrarMensajeRutina(error.message, true);
+            }
+        });
+    });
+
+    lista.querySelectorAll('[data-rutina-eliminar]').forEach(boton => {
+        boton.addEventListener('click', async () => {
+            if (!rutinasCargadas) {
+                mostrarMensajeRutina('Espera a que se carguen las rutinas antes de eliminarlas.', true);
+                return;
+            }
+            boton.disabled = true;
+            try {
+                const resultado = await leerRespuestaRutinas(await fetch(
+                    `/api/rutinas/${encodeURIComponent(boton.dataset.rutinaEliminar)}`,
+                    { method: 'DELETE' }
+                ), 'No se pudo eliminar la rutina.');
+                rutinas = resultado.rutinas.map(normalizarRutina);
+                actualizarRutinas();
+                mostrarMensajeRutina('Rutina eliminada.');
+            } catch (error) {
+                console.error('No se pudo eliminar la rutina:', error);
+                actualizarRutinas();
+                mostrarMensajeRutina(error.message, true);
+            }
+        });
+    });
+}
+
+const formularioRutina = document.getElementById('rutina-form');
+formularioRutina.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!rutinasCargadas) {
+        mostrarMensajeRutina('Espera a que se carguen las rutinas antes de guardar.', true);
+        return;
+    }
+    const dias = [...formularioRutina.querySelectorAll('input[name="rutina-dias"]:checked')]
+        .map(input => Number(input.value));
+    if (!dias.length) {
+        mostrarMensajeRutina('Selecciona al menos un día para esta rutina.', true);
+        return;
+    }
+
+    const nombre = document.getElementById('rutina-nombre').value.trim();
+    if (!nombre) {
+        mostrarMensajeRutina('Escribe un nombre para la rutina.', true);
+        return;
+    }
+    const lugar = document.getElementById('rutina-lugar').value;
+    const rutina = {
+        nombre,
+        lugar,
+        dias,
+        hora: document.getElementById('rutina-hora').value,
+        temperatura: Number(document.getElementById('rutina-objetivo').value)
+    };
+    const guardar = formularioRutina.querySelector('button[type="submit"]');
+    guardar.disabled = true;
+    try {
+        const resultado = await leerRespuestaRutinas(await fetch('/api/rutinas', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(rutina)
+        }), 'No se pudo guardar la rutina.');
+        rutinas = resultado.rutinas.map(normalizarRutina);
+        actualizarRutinas();
+        mostrarMensajeRutina('Rutina guardada y activada.');
+        formularioRutina.reset();
+        document.getElementById('rutina-nueva').open = false;
+    } catch (error) {
+        console.error('No se pudo guardar la rutina:', error);
+        mostrarMensajeRutina(error.message, true);
+    } finally {
+        guardar.disabled = false;
+    }
+});
+
+actualizarRutinas();
+
 async function exportarExcel() {
     if (historicoDatos.length === 0) {
         alert('No hay datos para exportar en el día seleccionado.');
@@ -484,6 +821,7 @@ let suscripcionPush = null;
 function mostrarAplicacion() {
     document.body.classList.add('autenticado');
     socket.connect();
+    void cargarRutinasDesdeServidor();
     prepararNotificaciones();
     if (new URLSearchParams(window.location.search).has('notificacion')) {
         navegar('pantalla-app');
